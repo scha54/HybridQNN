@@ -1,4 +1,4 @@
-# HQDeepDTAF — Local Implementation
+# HQDeepDTAF — Implementation Guide
 
 Hybrid Quantum Neural Network for protein-ligand binding affinity prediction.
 
@@ -7,150 +7,176 @@ Hybrid Quantum Neural Network for protein-ligand binding affinity prediction.
 
 ---
 
+## Quick Reference
+
+| Goal | File | Command / Action |
+|------|------|-----------------|
+| Smoke test (no data) | `HQDeepDTAF_smoketest.ipynb` | Upload to Colab → Run all |
+| Full training | `HQDeepDTAF_fullrun.ipynb` | Upload to Colab → configure paths → Run all |
+| Local smoke test | `train.py` | `python train.py --dummy --epochs 2 --runs 1` |
+| Preprocess PDBbind | `preprocess.py` | `python preprocess.py --pdbbind_dir /path/to/pdbbind2016` |
+
+---
+
 ## Repository Contents
 
 ```
 HybridQNN/
-├── model.py                     # HQDeepDTAF model + VQC + test() loop
-├── dataset.py                   # SMILES vocab, feature encoding, PDBbindDataset, DummyDataset
+├── model.py                     # HQDeepDTAF model, VQC circuit, test() loop
+├── dataset.py                   # SMILES vocabulary, feature encoding, PDBbindDataset, DummyDataset
 ├── metrics.py                   # c_index, RMSE, MAE, SD, CORR
-├── train.py                     # Training script (--dummy flag for smoke test)
-├── preprocess.py                # PDBbind v2016 → .npy preprocessing pipeline
-├── HQDeepDTAF_smoketest.ipynb   # Self-contained Colab smoke test notebook
+├── train.py                     # Training script with --dummy flag
+├── preprocess.py                # PDBbind v2016 → .npy feature pipeline
+├── HQDeepDTAF_smoketest.ipynb   # Self-contained Colab smoke test (no data needed)
+├── HQDeepDTAF_fullrun.ipynb     # Full training on PDBbind v2016 via Google Colab
 └── context.md                   # Architecture notes and paper summary
 ```
 
 ---
 
-## Smoke Test (Google Colab — no local install needed)
+## Option 1 — Smoke Test (~15 min, no data needed)
 
-Use this if your local machine cannot reach PyPI (e.g. corporate network restrictions).
+Verifies the model architecture runs end-to-end using synthetic data.
 
-### Steps
-
-1. Open [colab.research.google.com](https://colab.research.google.com) in a browser (sign in with a personal Google account)
+1. Open [colab.research.google.com](https://colab.research.google.com)
 2. **File → Upload notebook** → select `HQDeepDTAF_smoketest.ipynb`
-3. **Runtime → Run all** (or run cells top-to-bottom with Shift+Enter)
+3. **Runtime → Run all**
 
-### What the notebook does
-
-| Cell | Action |
-|------|--------|
-| 1 | Installs `torch`, `pennylane`, `numpy`, `tqdm` |
-| 2 | Writes `metrics.py` |
-| 3 | Writes `dataset.py` |
-| 4 | Writes `model.py` |
-| 5 | Runs 2 epochs on 64 synthetic samples, evaluates on 16, prints all 5 metrics |
-
-### Expected output
-
+Expected final output:
 ```
-Building DummyDataset (64 train / 16 test)...
-Instantiating DeepDTAF (this compiles the quantum circuit — may take ~30s)...
-
-Starting smoke test: 2 epochs, batch_size=16
-NOTE: Each batch runs the quantum circuit — expect ~1-3 min per epoch on Colab CPU.
-
-Epoch 1/2  train_MSE=X.XXXX
-Epoch 2/2  train_MSE=X.XXXX
-
-Running test evaluation...
-
-========== Smoke Test Results ==========
-  loss      : X.XXXX
-  c_index   : X.XXXX
-  RMSE      : X.XXXX
-  MAE       : X.XXXX
-  SD        : X.XXXX
-  CORR      : X.XXXX
-
 Smoke test PASSED — model runs end-to-end.
 ```
 
-Metric values will not be meaningful (synthetic data), but a clean run confirms the full architecture works.
+---
 
-### Timing (Colab CPU)
+## Option 2 — Full Training on PDBbind v2016
 
-| Phase | Time |
-|-------|------|
-| Package install | ~1 min |
-| Circuit compile (model instantiation) | ~30 sec |
-| Per epoch (4 batches, VQC per sample) | ~2–5 min |
-| **Total** | **~10–15 min** |
+### Prerequisites
+
+| Requirement | Notes |
+|-------------|-------|
+| Google account | For Colab + Google Drive |
+| ~25 GB Google Drive space | PDBbind raw (~20 GB) + processed (~5 GB) |
+| PDBbind v2016 registration | Free academic registration at pdbbind.org.cn |
+| Colab runtime | Free CPU works; Pro recommended for longer sessions |
 
 ---
 
-## Local Smoke Test (if packages are available)
+### Step 1 — Download PDBbind v2016
 
-```bash
-python train.py --dummy --epochs 2 --runs 1
+Register and download from [pdbbind.org.cn](http://www.pdbbind.org.cn). You need three files:
+
+| File | Size | Contents |
+|------|------|----------|
+| `PDBbind_v2016_plain_text_index.tar.gz` | ~1 MB | Affinity labels |
+| `PDBbind_v2016_core_set.tar.gz` | ~400 MB | 290 test complexes |
+| `PDBbind_v2016_other_PL_set.tar.gz` | ~18 GB | ~3,700 train complexes |
+
+Extract so the layout is:
 ```
-
-### Requirements
-
-```bash
-pip install torch pennylane numpy tqdm
+pdbbind2016/
+├── v2016-core/
+│   ├── 1a1e/
+│   │   ├── 1a1e_protein.pdb
+│   │   ├── 1a1e_pocket.pdb
+│   │   └── 1a1e_ligand.sdf
+│   └── ...
+├── v2016-other-PL/
+│   └── ...
+└── index/
+    ├── INDEX_core_data.2016
+    └── INDEX_general_PL_data.2016
 ```
-
-> **Corporate network blocked?** If `pip install` returns HTTP 403, use the Colab notebook above or ask IT for the internal pip mirror URL.
 
 ---
 
-## Full Training on PDBbind v2016
+### Step 2 — Set Up Google Drive
 
-### 1. Download the dataset
+Create a folder `HybridQNN/` in your Google Drive and upload:
 
-Register and download from [pdbbind.org.cn](http://www.pdbbind.org.cn). You need:
-- `v2016-core/` — test set (290 complexes)
-- `v2016-other-PL/` — training set (~3,700 complexes)
-- `index/INDEX_core_data.2016` and `index/INDEX_general_PL_data.2016`
-
-### 2. Preprocess
-
-```bash
-pip install biopython openbabel-wheel
-python preprocess.py --pdbbind_dir /path/to/pdbbind2016 --output_dir data/processed
+```
+MyDrive/HybridQNN/
+├── metrics.py
+├── dataset.py
+├── model.py
+├── preprocess.py
+├── train.py
+└── pdbbind2016/          ← extracted PDBbind data
+    ├── v2016-core/
+    ├── v2016-other-PL/
+    └── index/
 ```
 
-Outputs one `.npy` file per complex per modality: `<pdb_id>_{seq,pkt,smi,aff}.npy`  
-Also writes `data/splits/train.txt` and `data/splits/test.txt`.
+The preprocessing outputs (`data/processed/`, `data/splits/`) and checkpoints will be saved here automatically.
 
-### 3. Train
+---
 
-```bash
-python train.py \
-  --data_dir data/processed \
-  --train_split data/splits/train.txt \
-  --test_split data/splits/test.txt \
-  --epochs 20 \
-  --batch_size 16 \
-  --runs 5
+### Step 3 — Run the Full Training Notebook
+
+1. Open [colab.research.google.com](https://colab.research.google.com)
+2. **File → Upload notebook** → select `HQDeepDTAF_fullrun.ipynb`
+3. Edit **Cell 3 (Configure Paths)** if your Drive folder is named differently
+4. **Runtime → Run all**
+
+The notebook will:
+- Install all dependencies (including `dssp` binary for secondary structure)
+- Mount your Google Drive
+- Verify source files and PDBbind structure
+- Run preprocessing (~2–4 hours, saved directly to Drive)
+- Train for 5 runs × 20 epochs with epoch-level checkpointing
+
+**If the Colab session times out**, simply re-run the notebook — it will resume from the last completed epoch automatically.
+
+---
+
+### Step 4 — Retrieve Results
+
+After training, download from Drive:
+- `HybridQNN/checkpoints/best_model.pt` — trained model weights
+- `HybridQNN/checkpoints/progress.json` — run history and metrics
+
+---
+
+## Training Configuration
+
+```python
+optimizer    = AdamW
+lr           = 0.005
+weight_decay = 0.01
+loss         = MSELoss
+epochs       = 20
+batch_size   = 16
+runs         = 5          # paper selects run with lowest train MSE
 ```
 
-Training repeats 5 times; the run with lowest training MSE is saved to `checkpoints/best_model.pt`.
+---
 
-### Paper best results (HQDeepDTAF-NN-Angle, 9 qubits)
+## Estimated Training Time
 
-| MAE | RMSE | R | SD | CI |
-|-----|------|---|----|----|
-| 1.082 | 1.368 | 0.783 | 1.355 | 0.792 |
+| Environment | Preprocessing | Training (5 runs × 20 epochs) |
+|-------------|--------------|-------------------------------|
+| Colab free CPU | 2–4 hours | 5–10 days (use checkpointing) |
+| Colab Pro (A100) | 2–4 hours | 2–4 days (GPU helps classical layers only) |
+| 32-core workstation | 1–2 hours | 2–3 days |
+| Paper hardware (Ryzen 9 7950X) | — | ~2 days |
+
+> PennyLane's `default.qubit` does not use the GPU — the VQC simulation always runs on CPU.
 
 ---
 
 ## Model Architecture
 
 ```
-Protein seq (1000 × 40)  → Linear(40,128) → DilatedResBlockA → AdaptiveMaxPool → 128-dim
-Pocket seq  (63 × 40)    → Linear(40,128) → Conv1d stack     → AdaptiveMaxPool → 128-dim
-SMILES      (150,)       → Embedding(64,128) → DilatedResBlockB → AdaptiveMaxPool → 128-dim
+Protein seq (1000 × 40)  → Linear(40, 128) → DilatedResBlockA (rates 1,2,4,8,16) → MaxPool → 128-dim
+Pocket  seq (63 × 40)    → Linear(40, 128) → Conv1d(32→64→128)                    → MaxPool → 128-dim
+SMILES      (150,)       → Embedding(64, 128) → DilatedResBlockB (rates 1,2,4,8)  → MaxPool → 128-dim
 
-Concat → 384-dim → Dropout(0.2) → Linear(384, n_qubits)
-→ ReUploadingVQC (n_qubits=10, qnn_layers=20) → Linear(n_qubits, 1) → PReLU → affinity
+Concat(384) → Dropout(0.2) → Linear(384, n_qubits=10)
+→ ReUploadingVQC (10 qubits, 20 layers, 830 quantum params)
+→ Linear(10, 1) → PReLU → binding affinity
 ```
 
-**Quantum circuit:** `default.qubit` (PennyLane CPU simulator), `diff_method='best'` (parameter-shift rule), wrapped as `qml.qnn.TorchLayer`.
-
-**Quantum parameters:** 830 (entangling: 21×1×10×3=630, embedding: 20×10=200)
+**Quantum circuit:** PennyLane `default.qubit`, parameter-shift gradients, wrapped as `qml.qnn.TorchLayer`
 
 ---
 
@@ -163,3 +189,31 @@ Concat → 384-dim → Dropout(0.2) → Linear(384, n_qubits)
 | R (CORR) | ↑ higher is better | Pearson correlation |
 | SD | ↓ lower is better | Std dev of residuals after linear fit |
 | CI | ↑ higher is better | Concordance index |
+
+**Paper best results (HQDeepDTAF-NN-Angle, 9 qubits, PDBbind v2016 Core):**
+
+| MAE | RMSE | R | SD | CI |
+|-----|------|---|----|----|
+| 1.082 | 1.368 | 0.783 | 1.355 | 0.792 |
+
+---
+
+## Troubleshooting
+
+### `pip install` returns HTTP 403 Forbidden
+Corporate network blocks PyPI. Use the Colab notebooks (install runs on Google's servers) or ask IT for the internal pip mirror URL.
+
+### `git push` SSL certificate error
+```powershell
+git config --global http.sslBackend schannel
+```
+Uses Windows' native SSL library which trusts the corporate CA certificate.
+
+### `mkdssp` not found during preprocessing
+On Colab, the `dssp` apt package installs the binary. Locally on Windows, download from [swift.cmbi.ru.nl/gv/dssp](https://swift.cmbi.ru.nl/gv/dssp/) or install via conda: `conda install -c salilab dssp`.
+
+### Colab session timed out mid-training
+Re-run the notebook. The training cell reads `progress.json` and resumes from the last completed epoch.
+
+### `Squeeze()` error with batch size 1
+The DataLoader uses `drop_last=True` to prevent batches of size 1, which would cause `Squeeze()` to drop the batch dimension.
